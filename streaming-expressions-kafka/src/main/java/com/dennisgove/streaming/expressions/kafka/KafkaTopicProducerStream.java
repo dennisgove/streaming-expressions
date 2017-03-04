@@ -30,7 +30,7 @@ import org.apache.solr.client.solrj.io.stream.expr.StreamFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class KafkaStream extends TupleStream implements Expressible {
+public class KafkaTopicProducerStream extends TupleStream implements Expressible {
   private Logger log = LoggerFactory.getLogger(getClass());
 
   /* (non-Javadoc)
