@@ -17,8 +17,11 @@
 package com.dennisgove.streaming.expressions.kafka;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.solr.client.solrj.io.Tuple;
@@ -74,7 +77,13 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
     StreamEvaluator value = getEvaluatorParameter("value", expression, factory);
     StreamEvaluator partition = getEvaluatorParameter("partition", expression, factory);    
     
-    List<Map<String,String>> otherParams = factory.getNamedOperands(expression).stream().collect(Collectors.toMap(StreamExpressionNamedParameter::getName, StreamExpressionNamedParameter::getParameter))
+    Map<String,String> otherParams = new HashMap<String,String>();
+    Set<String> ignoreParams = new HashSet<String>(){ { add("bootstrapServers"); add("keyType"); add("valueType"); add("topic"); add("key"); add("value"); add("partition"); } };
+    for(StreamExpressionNamedParameter param : factory.getNamedOperands(expression).stream().filter(item -> !ignoreParams.contains(item.getName())).collect(Collectors.toList())){
+      if(param.getParameter() instanceof StreamExpressionValue){
+        otherParams.put(param.getName(), ((StreamExpressionValue)param.getParameter()).getValue());
+      }
+    }
   }
   
   private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory){
