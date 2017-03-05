@@ -19,15 +19,20 @@ package com.dennisgove.streaming.expressions.kafka;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.solr.client.solrj.io.Tuple;
 import org.apache.solr.client.solrj.io.comp.StreamComparator;
+import org.apache.solr.client.solrj.io.eval.AddEvaluator;
+import org.apache.solr.client.solrj.io.eval.StreamEvaluator;
 import org.apache.solr.client.solrj.io.stream.StreamContext;
 import org.apache.solr.client.solrj.io.stream.TupleStream;
 import org.apache.solr.client.solrj.io.stream.expr.Explanation;
 import org.apache.solr.client.solrj.io.stream.expr.Expressible;
 import org.apache.solr.client.solrj.io.stream.expr.StreamExpression;
+import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionNamedParameter;
 import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionParameter;
+import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionValue;
 import org.apache.solr.client.solrj.io.stream.expr.StreamFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +44,7 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
 
   private KafkaProducer<?,?> producerClient;
   
-  public KafkaTopicProducerStream(StreamExpression expression, StreamFactory factory){
+  public KafkaTopicProducerStream(StreamExpression expression, StreamFactory factory) throws IOException{
     /*
      *  kafkaProducer(
      *    <incoming stream>, 
@@ -58,9 +63,44 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
      *  add(foo, bar) // value of foo + value of bar
      */
     
+    List<StreamExpression> streamParams = factory.getExpressionOperandsRepresentingTypes(expression, TupleStream.class, Expressible.class);
     
+    String bootstrapServers = getStringParameter("bootstrapServers", expression, factory);
+    String keyType = getStringParameter("keyType", expression, factory);
+    String valueType = getStringParameter("valueType", expression, factory);
+    
+    StreamEvaluator topic = getEvaluatorParameter("topic", expression, factory);
+    StreamEvaluator key = getEvaluatorParameter("key", expression, factory);
+    StreamEvaluator value = getEvaluatorParameter("value", expression, factory);
+    StreamEvaluator partition = getEvaluatorParameter("partition", expression, factory);    
+    
+    List<Map<String,String>> otherParams = factory.getNamedOperands(expression).stream().collect(Collectors.toMap(StreamExpressionNamedParameter::getName, StreamExpressionNamedParameter::getParameter))
   }
   
+  private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory){
+    StreamExpressionNamedParameter param = factory.getNamedOperand(expression, paramName);
+    if(null != param){
+      if(param.getParameter() instanceof StreamExpressionValue){
+        return ((StreamExpressionValue)param.getParameter()).getValue();
+      }
+    }
+    
+    return null;
+  }
+
+  private StreamEvaluator getEvaluatorParameter(String paramName, StreamExpression expression, StreamFactory factory) throws IOException{
+    StreamExpressionNamedParameter param = factory.getNamedOperand(expression, paramName);
+    if(null != param){
+      if(param.getParameter() instanceof StreamExpression){
+        if(factory.doesRepresentTypes((StreamExpression)param.getParameter(), StreamEvaluator.class)){
+          return factory.constructEvaluator((StreamExpression)param.getParameter());
+        }
+      }
+    }
+    
+    return null;
+  }
+
 
   public StreamExpressionParameter toExpression(StreamFactory factory) throws IOException {
     return null;
