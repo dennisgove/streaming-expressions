@@ -19,6 +19,24 @@
     <module>streaming-expressions-kafka</module>
   </modules>
 
+  <!-- 
+    Allows us to use SNAPSHOT versions of apache projects if we need to. Note that the way we do 
+    release builds we will not be able to release a version depending on a SNAPSHOT version.    
+  -->
+  <repositories>
+    <repository>
+      <id>apache.snapshots</id>
+      <name>Apache Development Snapshot Repository</name>
+      <url>https://repository.apache.org/content/repositories/snapshots/</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -39,7 +57,7 @@
           <target>1.8</target>
         </configuration>
       </plugin>
-      
+
     </plugins>
   </build>
 
