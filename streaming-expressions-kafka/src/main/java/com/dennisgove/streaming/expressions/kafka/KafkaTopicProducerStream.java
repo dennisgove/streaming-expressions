@@ -21,9 +21,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.Metric;
+import org.apache.kafka.common.serialization.DoubleSerializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.solr.client.solrj.io.Tuple;
 import org.apache.solr.client.solrj.io.comp.StreamComparator;
 import org.apache.solr.client.solrj.io.eval.StreamEvaluator;
@@ -44,10 +51,31 @@ import org.slf4j.LoggerFactory;
 public class KafkaTopicProducerStream extends TupleStream implements Expressible {
   private static final long serialVersionUID = 1L;
 
+  private static Map<String,String> typeSerializers = new HashMap<String,String>(){{
+    put("int", IntegerSerializer.class.getName());
+    put("integer", IntegerSerializer.class.getName());
+    put("double", DoubleSerializer.class.getName());
+    put("long", LongSerializer.class.getName());
+    put("string", StringSerializer.class.getName());
+  }};
+
+  private static Set<String> knownParameters = new HashSet<String>() {
+    {
+      add("bootstrapServers");
+      add("keyType");
+      add("valueType");
+      add("topic");
+      add("key");
+      add("value");
+      add("partition");
+    }
+  };
+
   private Logger log = LoggerFactory.getLogger(getClass());
 
   private StreamContext context;
-  private KafkaProducer<?,?> producerClient;
+  private KafkaProducer producerClient;
+  private int recordsPublished = 0;
 
   private TupleStream incomingStream;
   private String bootstrapServers;
@@ -60,28 +88,6 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
   private Map<String,String> otherProducerParams;
 
   public KafkaTopicProducerStream(StreamExpression expression, StreamFactory factory) throws IOException {
-    /*
-     * kafkaProducer(
-     * <incoming stream>,
-     * topic=<evaluator>,
-     * bootstrapServers=<kafka servers>,
-     * key=<evaluator>, // optional, if not provided then no key
-     * keyType=[string,int,long,double,boolean], // only required if using key
-     * and can't figure out from key param
-     * value=<evaluator> // optional, if not provided then whole tuple as json
-     * string is used
-     * valueType=[string,int,long,double,boolean], // only required if can't
-     * figure out from value param
-     * partition=<evaluator>, // optional, if not provided then no partition
-     * used when sending record
-     * )
-     * Anything that is <evaluator> is allowed to be any valid StreamEvaluator,
-     * such as
-     * raw("foo") // raw value "foo"
-     * "foo" // value of field foo
-     * add(foo, bar) // value of foo + value of bar
-     */
-
     List<StreamExpression> streamParams = factory.getExpressionOperandsRepresentingTypes(expression, TupleStream.class, Expressible.class);
 
     String bootstrapServers = getStringParameter("bootstrapServers", expression, factory);
@@ -96,18 +102,7 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
     StreamEvaluator partitionEvaluator = getEvaluatorParameter("partition", expression, factory);
 
     Map<String,String> otherParams = new HashMap<>();
-    Set<String> ignoreParams = new HashSet<String>() {
-      {
-        add("bootstrapServers");
-        add("keyType");
-        add("valueType");
-        add("topic");
-        add("key");
-        add("value");
-        add("partition");
-      }
-    };
-    for(StreamExpressionNamedParameter param : factory.getNamedOperands(expression).stream().filter(item -> !ignoreParams.contains(item.getName())).collect(Collectors.toList())) {
+    for(StreamExpressionNamedParameter param : factory.getNamedOperands(expression).stream().filter(item -> !knownParameters.contains(item.getName())).collect(Collectors.toList())) {
       if(param.getParameter() instanceof StreamExpressionValue) {
         otherParams.put(param.getName(), ((StreamExpressionValue)param.getParameter()).getValue());
       }
@@ -122,18 +117,15 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
     }
 
     if(null != keyEvaluator) {
-      if(null == keyType) {
-        throw new IOException(String.format(Locale.ROOT, "Invalid %s expressions '%s' - failed to determine keyType for key '%s' (string,int,long,boolean,double are all accepted)", factory.getFunctionName(getClass()), expression, keyEvaluator.toExpression(factory)));
+      if(null == keyType || !typeSerializers.containsKey(keyType)) {
+        throw new IOException(String.format(Locale.ROOT, "Invalid %s expressions '%s' - unknown keyType for key '%s' (string,int,long,double are all accepted)", factory.getFunctionName(getClass()), expression, keyEvaluator.toExpression(factory)));
       }
     }
 
     if(null != valueEvaluator) {
-      if(null == valueType) {
-        throw new IOException(String.format(Locale.ROOT, "Invalid %s expressions '%s' - failed to determine valueType for value '%s' (string,int,long,boolean,double are all accepted)", factory.getFunctionName(getClass()), expression, valueEvaluator.toExpression(factory)));
+      if(null == valueType || !typeSerializers.containsKey(valueType)) {
+        throw new IOException(String.format(Locale.ROOT, "Invalid %s expressions '%s' - unknown valueType for value '%s' (string,int,long,double are all accepted)", factory.getFunctionName(getClass()), expression, valueEvaluator.toExpression(factory)));
       }
-    }
-    else {
-      valueType = String.class.getName();
     }
 
     this.incomingStream = factory.constructStream(streamParams.get(0));
@@ -149,12 +141,73 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
 
   @Override
   public void open() throws IOException {
-    // producerClient = new
+    Properties properties = new Properties();
+    properties.put("bootstrap.servers", bootstrapServers);
+    properties.put("key.serializer", getTypeSerializer(keyType));
+    properties.put("value.serializer", getTypeSerializer(valueType));
+
+    for(Entry<String,String> entry : otherProducerParams.entrySet()){
+      properties.put(entry.getKey(), entry.getValue());
+    }
+
+    producerClient = new KafkaProducer<>(properties);
+    incomingStream.open();
+  }
+
+  private String getTypeSerializer(String type){
+    switch(type){
+      case "int":
+      case "integer":
+        return IntegerSerializer.class.getName();
+      case "double":
+        return DoubleSerializer.class.getName();
+      case "long":
+        return LongSerializer.class.getName();
+      case "string":
+      default:
+        return StringSerializer.class.getName();
+    }
   }
 
   @Override
   public Tuple read() throws IOException {
-    return null;
+    Tuple tuple = incomingStream.read();
+
+    // if we're not at the end, send it off
+    if(!tuple.EOF){
+      ProducerRecord<?,?> record = createRecord(tuple);
+      producerClient.send(record);
+      recordsPublished += 1;
+    }
+
+    // add metrics
+    Map<String,Double> metrics = new HashMap<>();
+    for(Object key : producerClient.metrics().keySet()){
+      metrics.put(((Metric)key).metricName().toString(), ((Metric)producerClient.metrics().get(key)).value());
+    }
+
+    tuple.put("__kafkaMetrics__", metrics);
+    tuple.put("__kafkaRecordsPublished__", recordsPublished);
+    return tuple;
+  }
+
+  private ProducerRecord<?,?> createRecord(Tuple tuple) throws IOException{
+    Object topic = topicEvaluator.evaluate(tuple);
+    Object value = (null != valueEvaluator ? valueEvaluator.evaluate(tuple) : createJson(tuple));
+    Object key = (null != keyEvaluator ? keyEvaluator.evaluate(tuple) : null);
+    Object partition = (null != partitionEvaluator ? partitionEvaluator.evaluate(tuple) : null);
+
+    if(null == topic || !(topic instanceof String)){
+      throw new IOException("Invalid tuple - unable to determine topic");
+    }
+
+    if(null == value){
+      throw new IOException("Invalid tuple - value is null");
+    }
+
+    if(null != key && null != partition){
+      return new ProducerRecord<?,?>((String)topic, (Integer)partition, key, value);
+    }
   }
 
   private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory) {
