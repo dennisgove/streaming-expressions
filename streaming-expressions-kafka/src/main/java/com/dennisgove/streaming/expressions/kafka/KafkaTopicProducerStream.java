@@ -47,6 +47,8 @@ import org.apache.solr.client.solrj.io.stream.expr.StreamExpressionValue;
 import org.apache.solr.client.solrj.io.stream.expr.StreamFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 public class KafkaTopicProducerStream extends TupleStream implements Expressible {
   private static final long serialVersionUID = 1L;
@@ -86,6 +88,8 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
   private String valueType;
   private StreamEvaluator partitionEvaluator;
   private Map<String,String> otherProducerParams;
+
+  private Gson gson = new GsonBuilder().create();
 
   public KafkaTopicProducerStream(StreamExpression expression, StreamFactory factory) throws IOException {
     List<StreamExpression> streamParams = factory.getExpressionOperandsRepresentingTypes(expression, TupleStream.class, Expressible.class);
@@ -193,7 +197,7 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
 
   private ProducerRecord<?,?> createRecord(Tuple tuple) throws IOException{
     Object topic = topicEvaluator.evaluate(tuple);
-    Object value = (null != valueEvaluator ? valueEvaluator.evaluate(tuple) : createJson(tuple));
+    Object value = (null != valueEvaluator ? valueEvaluator.evaluate(tuple) : gson.toJson(tuple));
     Object key = (null != keyEvaluator ? keyEvaluator.evaluate(tuple) : null);
     Object partition = (null != partitionEvaluator ? partitionEvaluator.evaluate(tuple) : null);
 
@@ -206,7 +210,13 @@ public class KafkaTopicProducerStream extends TupleStream implements Expressible
     }
 
     if(null != key && null != partition){
-      return new ProducerRecord<?,?>((String)topic, (Integer)partition, key, value);
+      return new ProducerRecord<>((String)topic, (Integer)partition, key, value);
+    }
+    else if(null != key){
+      return new ProducerRecord<>((String)topic, key, value);
+    }
+    else{
+      return new ProducerRecord<>((String)topic, value);
     }
   }
 
