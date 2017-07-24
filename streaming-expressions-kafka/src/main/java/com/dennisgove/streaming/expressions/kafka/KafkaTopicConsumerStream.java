@@ -27,7 +27,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -71,7 +73,8 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
   //  private List<String> partitions;
   private Map<String,String> otherConsumerParams;
 
-  private LinkedList<ConsumerRecord<String,String>> recordList = new LinkedList<>();
+  private AtomicBoolean isOpen = new AtomicBoolean(false);
+  private LinkedList<Tuple> tupleList = new LinkedList<>();
 
   public KafkaTopicConsumerStream(StreamExpression expression, StreamFactory factory) throws IOException {
     String bootstrapServers = getStringParameter("bootstrapServers", expression, factory);
@@ -103,24 +106,17 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
 
   @Override
   public void open() throws IOException {
-    //  kayden gove
-
     // https://www.confluent.io/blog/tutorial-getting-started-with-the-new-apache-kafka-0-9-consumer-client/
 
     Properties properties = new Properties();
-    properties.put("bootstrap.servers", bootstrapServers);
-    properties.put("key.deserializer", StringDeserializer.class.getName());
-    properties.put("value.deserializer", StringDeserializer.class.getName());
+    properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+    properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+    properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
     //    properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
     if(null != groupId){
       properties.put("group.id", groupId);
     }
-
-    // session.timeout.ms
-    // auto.offset.reset
-    // enable.auto.commit (default = true)
-    // auto.commit.interval.ms
 
     for(Entry<String,String> entry : otherConsumerParams.entrySet()){
       properties.put(entry.getKey(), entry.getValue());
@@ -128,25 +124,47 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
 
     consumerClient = new KafkaConsumer<>(properties);
     consumerClient.subscribe(new ArrayList(){{ add(topic); }});
+
+    // read any records already on the
+    loadTupleList(0);
+
+    isOpen.set(true);
+  }
+
+  private void loadTupleList(long pollTimeout){
+    for(ConsumerRecord<String,String> record : consumerClient.poll(pollTimeout)){
+      try{
+        // Here we are assuming the json is representative of the fields
+        // part of a tuple. This should be changed if and when we want to
+        // handle the passing of full tuples via kafka
+        tupleList.add(new Tuple((Map)ObjectBuilder.fromJSON(record.value())));
+      }
+      catch(Throwable e){
+        // log that there was an error, but continue going
+        log.error(String.format(Locale.ROOT, "Failed to convert kafka record a valid Tuple. Topic '%s', group '%s', and record key '%s' - %s", topic, groupId, record.key(), e.getMessage()), e);
+      }
+    }
   }
 
   @Override
   public Tuple read() throws IOException {
 
-    // Get next set of available records
-    if(recordList.isEmpty()) {
-      for(ConsumerRecord<String,String> record : consumerClient.poll(Long.MAX_VALUE)){
-        recordList.add(record);
+    // Get next set of available records, keep repeating until we get something
+    while(tupleList.isEmpty()) {
+
+      // if we're closed then return EOF
+      if(!isOpen.get()){
+        Tuple eof = new Tuple();
+        eof.EOF = true;
+        return eof;
       }
+
+      // wait at most 1s
+      loadTupleList(1000);
     }
 
-    // because we're waiting with Long.MAX_VALUE, at this point we will absolutely
-    // have a record. If we change to support a static poll period this will be different
-    ConsumerRecord<String,String> record = recordList.pop();
-    Map obj = (Map)ObjectBuilder.fromJSON(record.value());
-
-    Tuple tuple = new Tuple(obj);
-    return tuple;
+    // At this point we will absolutely have a tuple.
+    return tupleList.pop();
   }
 
   private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory) {
@@ -213,6 +231,8 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
 
   @Override
   public void close() throws IOException {
+    isOpen.set(true);
+
     if(null != consumerClient) {
       consumerClient.unsubscribe();
       consumerClient.close();
