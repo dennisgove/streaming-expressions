@@ -1,6 +1,6 @@
 ## Streaming Expressions - Extensions
 
-**Develop**: [![Build Status](https://travis-ci.org/dennisgove/streaming-expressions.svg?branch=develop)](https://travis-ci.org/dennisgove/streaming-expressions) |
+**Develop**: [![Build Status](https://travis-ci.org/dennisgove/streaming-expressions.svg?branch=develop)](https://travis-ci.org/dennisgove/streaming-expressions)
 
 This project houses various Solr Streaming Expression implementations which are too specific or specialized to be included in Solr core. The purpose is to allow for the creation and use of specialized expression logic without causing an increase in Solr's dependency set.
 
