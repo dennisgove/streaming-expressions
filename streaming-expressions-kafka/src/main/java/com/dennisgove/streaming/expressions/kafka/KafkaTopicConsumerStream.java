@@ -74,6 +74,7 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
   private Map<String,String> otherConsumerParams;
 
   private AtomicBoolean isOpen = new AtomicBoolean(false);
+  private long recordsRead = 0;
   private LinkedList<Tuple> tupleList = new LinkedList<>();
 
   public KafkaTopicConsumerStream(StreamExpression expression, StreamFactory factory) throws IOException {
@@ -164,7 +165,15 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     }
 
     // At this point we will absolutely have a tuple.
-    return tupleList.pop();
+    Tuple tuple = tupleList.pop();
+    if(tuple.EOF){
+      tuple.put("__kafkaRecordCount__", recordsRead);
+    }
+    else{
+      recordsRead += 1;
+    }
+
+    return tuple;
   }
 
   private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory) {
@@ -231,9 +240,10 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
 
   @Override
   public void close() throws IOException {
-    isOpen.set(true);
+    isOpen.set(false);
 
     if(null != consumerClient) {
+      consumerClient.commitSync();
       consumerClient.unsubscribe();
       consumerClient.close();
     }
