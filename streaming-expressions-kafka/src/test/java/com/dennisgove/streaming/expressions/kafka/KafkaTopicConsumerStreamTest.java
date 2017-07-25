@@ -18,7 +18,6 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.springframework.kafka.test.rule.KafkaEmbedded;
-import com.dennisgove.streaming.expressions.kafka.KafkaTopicConsumerStream;
 import com.google.gson.Gson;
 
 public class KafkaTopicConsumerStreamTest {

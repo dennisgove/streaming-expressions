@@ -50,6 +50,53 @@ import org.noggit.ObjectBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * <h1>Kafka Topic Consumer Stream</h1>
+ * The <b>KafkaTopicConsumerStream</b> provides a new
+ * <a href="https://lucene.apache.org/solr/guide/stream-sources.html">Solr Stream Source</a>
+ * to consume records from a Kafka topic.
+ * <pre>
+ * {@code
+ * kafkaConsumer(
+ *   topic=topicName,
+ *   groupId=clientGroup,
+ *   bootstrapServers=kafkaBootstrapServers
+ * )
+ * }
+ * </pre>
+ * You can also provide any other valid kafka consumer parameters of the form {@code paramName=value},
+ * for example {@code enable.auto.commit=true }. Any extra parameters will be passed directly to the
+ * Kafka Consumer.
+ * <p>
+ * When opened this will read all existing records off the topic and hold onto them until a
+ * call to {@link KafkaTopicConsumerStream#read()} which will return the first record. Each call
+ * to {@link KafkaTopicConsumerStream#read() read()} will return the next record, and when there aren't any
+ * left in the list it will get the next batch from Kafka.
+ * <p>
+ * {@link KafkaTopicConsumerStream#read() read()} will continue returning records until an EOF record is
+ * found or the stream is closed with {@link KafkaTopicConsumerStream#close()}.
+ * {@link KafkaTopicConsumerStream#read() read()} will not return until at least one record is read
+ * off the topic (or the stream is closed). There is a maximum delay of 1s between closing the stream and
+ * {@link KafkaTopicConsumerStream#read() read()} returning.
+ * <p>
+ * Records are expected to be valid JSON of the form.
+ *
+ * <pre>
+ * {@code
+ * {
+ *   "fieldA": "valueA",
+ *   "fieldB": 1
+ * }
+ * }
+ * </pre>
+ *
+ * An EOF record is one containing field:value {@code "EOF":"true" }.
+ * <p>
+ * <b>Note:</b> KafkaTopicConsumerStream is still under active development and is expected to change.
+ *
+ * @author Dennis Gove
+ * @since v0.0.1
+ */
 public class KafkaTopicConsumerStream extends TupleStream implements Expressible {
   private static final long serialVersionUID = 1L;
 
@@ -77,6 +124,14 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
   private long recordsRead = 0;
   private LinkedList<Tuple> tupleList = new LinkedList<>();
 
+  /**
+   * Accepts a valid {@link StreamExpression} adhering to the form above and constructs
+   * a new instance of the KafkaTopicConsumerStream.
+   *
+   * @param expression A valid kafkaConsume {@link StreamExpression}
+   * @param factory A valid {@link StreamFactory}
+   * @throws IOException If unable to parse or deal with the incoming expression
+   */
   public KafkaTopicConsumerStream(StreamExpression expression, StreamFactory factory) throws IOException {
     String bootstrapServers = getStringParameter("bootstrapServers", expression, factory);
     String groupId = getStringParameter("groupId", expression, factory);
@@ -105,6 +160,9 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     //    this.partitions = partitions;
   }
 
+  /**
+   * Open the consumer and make a valid consumer connection to the Kafka topic.
+   */
   @Override
   public void open() throws IOException {
     // https://www.confluent.io/blog/tutorial-getting-started-with-the-new-apache-kafka-0-9-consumer-client/
@@ -116,7 +174,7 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     //    properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
     if(null != groupId){
-      properties.put("group.id", groupId);
+      properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     }
 
     for(Entry<String,String> entry : otherConsumerParams.entrySet()){
@@ -147,6 +205,10 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     }
   }
 
+  /**
+   * Returns the next record off the topic in Tuple form. Will wait until at least one record is read from
+   * from the topic, or the stream is closed.
+   */
   @Override
   public Tuple read() throws IOException {
 
@@ -205,6 +267,9 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     return values;
   }
 
+  /**
+   * Returns a valid expression for this instance.
+   */
   @Override
   public StreamExpressionParameter toExpression(StreamFactory factory) throws IOException {
     StreamExpression expression = new StreamExpression(factory.getFunctionName(getClass()));
@@ -218,6 +283,9 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     return expression;
   }
 
+  /**
+   * Returns a valid explanation of this stream instance
+   */
   @Override
   public Explanation toExplanation(StreamFactory factory) throws IOException {
 
@@ -238,6 +306,9 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     return explanation;
   }
 
+  /**
+   * Closes the stream after committing the last read offset.
+   */
   @Override
   public void close() throws IOException {
     isOpen.set(false);
@@ -249,6 +320,9 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     }
   }
 
+  /**
+   * Returns null as there is no appropriate sort for a Kafka topic
+   */
   @Override
   public StreamComparator getStreamSort() {
     return null;
