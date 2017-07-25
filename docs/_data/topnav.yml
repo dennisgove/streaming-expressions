@@ -1,0 +1,20 @@
+## Topnav single links
+## if you want to list an external url, use external_url instead of url. the theme will apply a different link base.
+topnav:
+- title: Topnav
+  items:
+    - title: GitHub
+      external_url: https://github.com/dennisgove/streaming-expressions
+
+#Topnav dropdowns
+topnav_dropdowns:
+- title: Topnav dropdowns
+  folders:
+    - title: Apache Solr
+      folderitems:
+        - title: Get Started with Solr
+          external_url: https://lucene.apache.org/solr/
+        - title: Solr Reference Guide
+          external_url: https://lucene.apache.org/solr/guide/
+        - title: Core Streaming Expressions
+          external_url: https://lucene.apache.org/solr/guide/streaming-expressions.html
