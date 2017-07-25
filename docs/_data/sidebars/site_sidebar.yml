@@ -1,0 +1,40 @@
+# This is your sidebar TOC. The sidebar code loops through sections here and provides the appropriate formatting.
+
+entries:
+- title: sidebar
+  # product: Streaming Expression
+  # version: 0.1
+  folders:
+
+  - title: Overview
+    output: web
+    folderitems:
+
+    - title: Introduction
+      url: /index.html
+      output: web
+      type: homepage
+
+    - title: Support
+      url: /home_support.html
+      output: web
+
+  - title: Release Notes
+    output: web
+    folderitems:
+
+    - title: 0.1 Release notes
+      url: /releasenotes_0_1.html
+      output: web
+
+  - title: Kafka
+    output: web
+    folderitems:
+
+    - title: Overview
+      url: /kafka_overview.html
+      output: web
+
+    - title: Topic Consumer
+      url: /kafka_topic_consumer.html
+      output: web
