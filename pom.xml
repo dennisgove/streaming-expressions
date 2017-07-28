@@ -12,12 +12,12 @@
 
   <groupId>com.dennisgove</groupId>
   <artifactId>streaming-expressions</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1-SNAPSHOT</version>
 
   <packaging>pom</packaging>
   <name>${project.groupId}:${project.artifactId}</name>
   <url>https://github.com/dennisgove/streaming-expressions</url>
-  <description>Sets of extension streaming expressions for Apache Solr</description>
+  <description>Sets of streaming expressions for Apache Solr</description>
 
   <licenses>
     <license>
@@ -49,7 +49,7 @@
   </properties>
 
   <modules>
-    <module>streaming-expressions-kafka</module>
+    <!-- <module>streaming-expressions-kafka</module> -->
   </modules>
 
   <dependencyManagement>
@@ -108,7 +108,41 @@
           <nohelp>true</nohelp>
         </configuration>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>1.6</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.sonatype.plugins</groupId>
+        <artifactId>nexus-staging-maven-plugin</artifactId>
+        <version>1.6.7</version>
+        <extensions>true</extensions>
+        <configuration>
+          <serverId>ossrh</serverId>
+          <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+          <autoReleaseAfterClose>true</autoReleaseAfterClose>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
 
 </project>
