@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -105,6 +106,7 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
       add("bootstrapServers");
       add("groupId");
       add("topic");
+      add("limit");
       //      add("partitions");
     }
   };
@@ -117,6 +119,7 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
   private String bootstrapServers;
   private String groupId;
   private String topic;
+  private OptionalInt limit;
   //  private List<String> partitions;
   private Map<String,String> otherConsumerParams;
 
@@ -136,6 +139,7 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     String bootstrapServers = getStringParameter("bootstrapServers", expression, factory);
     String groupId = getStringParameter("groupId", expression, factory);
     String topic = getStringParameter("topic", expression, factory);
+    String limitStr = getStringParameter("limit", expression, factory);
     //    List<String> partitions = getMultiStringParameter("partitions", expression, factory);
 
     Map<String,String> otherParams = new HashMap<>();
@@ -157,6 +161,19 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     this.otherConsumerParams = otherParams;
     this.groupId = groupId;
     this.topic = topic;
+    
+    if(null != limitStr){
+      try{
+        limit = OptionalInt.of(Integer.parseInt(limitStr));
+      }
+      catch(NumberFormatException e){
+        throw new IOException(String.format(Locale.ROOT, "Invalid %s expressions '%s' - limit '%s' was provided but is not a valid integer", factory.getFunctionName(getClass()), expression, limitStr));
+      }
+    }
+    else{
+      limit = OptionalInt.empty();
+    }
+    
     //    this.partitions = partitions;
   }
 
@@ -212,14 +229,16 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
   @Override
   public Tuple read() throws IOException {
 
+    if(limit.isPresent() && recordsRead >= limit.getAsInt()){
+      return generateEOF();
+    }
+    
     // Get next set of available records, keep repeating until we get something
     while(tupleList.isEmpty()) {
 
       // if we're closed then return EOF
       if(!isOpen.get()){
-        Tuple eof = new Tuple();
-        eof.EOF = true;
-        return eof;
+        return generateEOF();
       }
 
       // wait at most 1s
@@ -236,6 +255,13 @@ public class KafkaTopicConsumerStream extends TupleStream implements Expressible
     }
 
     return tuple;
+  }
+  
+  private Tuple generateEOF(){
+    Tuple eof = new Tuple();
+    eof.EOF = true;
+    eof.put("__kafkaRecordCount__", recordsRead);
+    return eof;
   }
 
   private String getStringParameter(String paramName, StreamExpression expression, StreamFactory factory) {
